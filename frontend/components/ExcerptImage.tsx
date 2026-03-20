@@ -18,7 +18,7 @@ interface Props {
 }
 
 // Padding added around the crop window so single-line excerpts show enough context.
-const PAD_X = 0.02;
+const PAD_X = 0.03;
 const PAD_Y = 0.03;
 // Minimum crop height (as fraction of page height) so tiny results are still readable.
 const MIN_CROP_H = 0.12;
@@ -32,12 +32,13 @@ export function ExcerptImage({ src, highlights, maxHeight, alt }: Props) {
   const maxX = Math.max(...highlights.map((h) => h.bbox.x + h.bbox.w));
   const maxY = Math.max(...highlights.map((h) => h.bbox.y + h.bbox.h));
 
-  const padded = {
-    x: Math.max(0, minX - PAD_X),
-    y: Math.max(0, minY - PAD_Y),
-    w: Math.min(1, maxX - minX + PAD_X * 2),
-    h: Math.min(1, maxY - minY + PAD_Y * 2),
-  };
+  // Compute padded edges, clamp each to [0, 1], then derive w/h.
+  // This ensures x+w <= 1 and y+h <= 1 even when bbox is near a page edge.
+  const px0 = Math.max(0, minX - PAD_X);
+  const py0 = Math.max(0, minY - PAD_Y);
+  const px1 = Math.min(1, maxX + PAD_X);
+  const py1 = Math.min(1, maxY + PAD_Y);
+  const padded = { x: px0, y: py0, w: px1 - px0, h: py1 - py0 };
 
   // Expand crop vertically if the region is too short to be readable.
   const cropH = Math.max(padded.h, MIN_CROP_H);

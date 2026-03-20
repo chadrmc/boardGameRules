@@ -18,7 +18,7 @@ EXPECTED_MIN_ITEMS = 10  # loose lower bound; real count is 14
 
 
 @pytest.fixture(scope="module")
-def component_boxes(backend):
+def component_boxes(backend, ingested_fromage):
     resp = requests.get(
         f"{backend}/elements",
         params={"rulebook_id": FROMAGE_ID, "page_number": CONTENTS_PAGE},
@@ -28,7 +28,7 @@ def component_boxes(backend):
     elements = resp.json()["elements"]
     boxes = [el for el in elements if el["type"] == "component" and "COMPONENT LIST" in el["label"]]
     if len(boxes) < EXPECTED_MIN_ITEMS:
-        pytest.skip(f"Fromage not yet ingested or contents page missing (got {len(boxes)} items)")
+        pytest.skip(f"Fromage contents page missing expected items (got {len(boxes)} items)")
     return sorted(boxes, key=lambda e: e["bbox"]["y"])
 
 

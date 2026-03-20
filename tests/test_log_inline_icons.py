@@ -86,10 +86,10 @@ def _get_all_elements(backend):
 
 
 @pytest.fixture(scope="module")
-def log_all_elements(backend):
+def log_all_elements(backend, ingested_log):
     pages = _get_all_elements(backend)
     if not pages:
-        pytest.skip("LOG not ingested")
+        pytest.skip("LOG has no elements after ingestion")
     return pages
 
 

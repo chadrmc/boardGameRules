@@ -48,6 +48,110 @@ function groupResults(results: SearchResult[]): SearchResult[][] {
   });
 }
 
+/** Render inline markdown (bold, italic) as React nodes. */
+function renderMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
+  // Split on **bold** and *italic* patterns
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((seg, j) => {
+    const boldMatch = seg.match(/^\*\*([^*]+)\*\*$/);
+    if (boldMatch) return <strong key={`${keyPrefix}-${j}`}>{boldMatch[1]}</strong>;
+    const italicMatch = seg.match(/^\*([^*]+)\*$/);
+    if (italicMatch) return <em key={`${keyPrefix}-${j}`}>{italicMatch[1]}</em>;
+    return seg;
+  });
+}
+
+/** Try to find a result matching a text bracket reference like "FAQ - 2 stands". */
+function findResultByText(bracket: string, results: SearchResult[]): SearchResult | null {
+  const lower = bracket.toLowerCase();
+  // Try source_type prefix match (e.g. "FAQ - ...", "Errata - ...")
+  const sourceTypes = ["faq", "errata", "expansion", "variant"];
+  const typeMatch = sourceTypes.find((t) => lower.startsWith(t));
+  // Try element type prefix match (e.g. "Rule - ...", "Note - ...")
+  const elementTypes = ["rule", "note", "illustration", "example", "diagram", "table", "component"];
+  const elemMatch = elementTypes.find((t) => lower.startsWith(t));
+
+  // Score each result: higher = better match
+  let best: SearchResult | null = null;
+  let bestScore = 0;
+  for (const r of results) {
+    let score = 0;
+    const label = r.element.label.toLowerCase();
+    const desc = r.element.description?.toLowerCase() ?? "";
+    // Source type match
+    if (typeMatch && r.element.source_type === typeMatch) score += 3;
+    // Element type match
+    if (elemMatch && r.element.type === elemMatch) score += 3;
+    // Label substring match (both directions)
+    if (label && lower.includes(label)) score += 5;
+    if (label && label.includes(lower)) score += 4;
+    // Partial: check remaining text after stripping type prefix
+    const stripped = lower.replace(/^(?:faq|errata|expansion|variant|rule|note|illustration|example|diagram|table|component)\s*[-–—:]\s*/i, "");
+    if (stripped.length > 2) {
+      if (label.includes(stripped)) score += 4;
+      if (desc.includes(stripped)) score += 2;
+    }
+    // Also check errata/faq attachments
+    for (const e of r.errata ?? []) {
+      const el = e.label.toLowerCase();
+      if (el.includes(stripped) || stripped.includes(el)) score += 4;
+    }
+    for (const e of r.faq ?? []) {
+      const el = e.label.toLowerCase();
+      if (el.includes(stripped) || stripped.includes(el)) score += 4;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return bestScore >= 3 ? best : null;
+}
+
+/** Parse bracket citations in answer text and render as clickable links to results.
+ *  Handles both numbered [1] and text-based [FAQ - label] references. */
+function renderCitations(
+  text: string,
+  results: SearchResult[],
+  onOpen: (primary: SearchResult, group: SearchResult[]) => void,
+): React.ReactNode[] {
+  // Match any [...] bracket content
+  const parts = text.split(/(\[[^\]]+\])/g);
+  return parts.map((part, i) => {
+    const bracketMatch = part.match(/^\[([^\]]+)\]$/);
+    if (!bracketMatch) return renderMarkdown(part, `md-${i}`);
+    const content = bracketMatch[1];
+
+    // Try numbered citation first
+    const numMatch = content.match(/^(\d+)$/);
+    let result: SearchResult | null = null;
+    let displayText = content;
+
+    if (numMatch) {
+      const idx = parseInt(numMatch[1], 10) - 1;
+      result = results[idx] ?? null;
+      displayText = numMatch[1];
+    } else {
+      // Try text-based matching
+      result = findResultByText(content, results);
+      displayText = content;
+    }
+
+    if (!result) return renderMarkdown(part, `md-${i}`); // No match — render as plain text with markdown
+
+    return (
+      <button
+        key={i}
+        onClick={() => onOpen(result, [result])}
+        className="inline-flex items-center justify-center text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded px-1 py-0.5 mx-0.5 transition-colors align-baseline"
+        title={`${result.element.label} — Page ${result.element.page_number}`}
+      >
+        {displayText}
+      </button>
+    );
+  });
+}
+
 export default function Home() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [query, setQuery] = useState("");
@@ -176,7 +280,7 @@ export default function Home() {
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 shadow-sm">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Answer</p>
             <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">
-              {answer}
+              {renderCitations(answer, results, (primary, group) => setModalState({ primary, group }))}
               {answerLoading && (
                 <span className="inline-block w-2 h-4 bg-gray-400 ml-0.5 animate-pulse rounded-sm align-middle" />
               )}

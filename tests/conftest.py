@@ -56,23 +56,19 @@ def backend(tmp_path_factory):
     Start an isolated test backend on port 8001 with a temporary data directory.
 
     If port 8001 is already in use, assumes an existing test server and skips launching.
-    The backend's CWD is set to a temp directory so that ``Path("./data")`` in
-    storage.py and main.py resolves to an isolated location.
+    Sets BGR_DATA_DIR to a temp directory so storage.py and main.py use isolated data.
     """
     if _port_in_use(TEST_PORT):
         # Assume an existing test server is running
         yield BASE_URL
         return
 
-    # Create a temp working directory for the server — data/ will be created here
-    work_dir = tmp_path_factory.mktemp("bgr_test_server")
+    # Create an isolated data directory for the test server
+    data_dir = tmp_path_factory.mktemp("bgr_test_data")
 
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(BACKEND_DIR)
+    env["BGR_DATA_DIR"] = str(data_dir)
     env["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
-    # Override the .env path so main.py's load_dotenv still finds the API key.
-    # main.py loads from Path(__file__).parent.parent / ".env" which resolves
-    # to the real project root — this works since we don't move the source files.
 
     proc = subprocess.Popen(
         [
@@ -82,7 +78,7 @@ def backend(tmp_path_factory):
             "--port", str(TEST_PORT),
             "--log-level", "warning",
         ],
-        cwd=str(work_dir),
+        cwd=str(BACKEND_DIR),
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -109,7 +105,6 @@ def backend(tmp_path_factory):
             proc.wait(timeout=5)
 
         # Clean up test data
-        data_dir = work_dir / "data"
         if data_dir.exists():
             shutil.rmtree(data_dir, ignore_errors=True)
 

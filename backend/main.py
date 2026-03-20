@@ -1,6 +1,7 @@
 import asyncio
 import fitz
 import json
+import os
 import anthropic
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -16,7 +17,7 @@ import ingest as ingest_module
 import storage
 import rerank as rerank_module
 
-DATA_DIR = Path("./data")
+DATA_DIR = Path(os.environ.get("BGR_DATA_DIR", "./data"))
 IMAGES_DIR = DATA_DIR / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 

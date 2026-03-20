@@ -224,3 +224,102 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ==========================================================================
+# OUTPUT: python diagnose_icons.py ../examples/bb.pdf
+# ==========================================================================
+# Analyzing: ../examples/bb.pdf
+# Pages to scan: first 5
+#
+# Page  XObj Images  PUA Chars  Text Gaps
+#    1          118          0          0
+#    2           15          0          0
+#    3          102          0          0
+#    4           16          0          0
+#    5           12          0          0
+#
+# FONT ANALYSIS: No fonts with PUA codepoints found.
+# IMAGE DIGEST FREQUENCY: 151 unique digests (19 repeated, 132 unique)
+#   Top repeated: 59×188 image ×39 (card/token artwork), 1×1 pixel ×8 (decorative)
+#
+# VERDICT: bb.pdf embeds illustrations as XObject images but no inline icons
+#   in the text stream. The 59×188 repeated images are game card artwork, not
+#   inline text icons. No PUA fonts, no text gaps.
+#
+# ==========================================================================
+# OUTPUT: python diagnose_icons.py ../examples/AC.pdf
+# ==========================================================================
+# Analyzing: ../examples/AC.pdf
+# Pages to scan: first 5
+#
+# Page  XObj Images  PUA Chars  Text Gaps
+#    1            2          0          0
+#    2            1          0          0
+#    3            1          0          0
+#    4          457          0          0
+#    5           34          0          0
+#
+# FONT ANALYSIS: No fonts with PUA codepoints found.
+# IMAGE DIGEST FREQUENCY: 241 unique digests (69 repeated, 172 unique)
+#   Top repeated: 3×3 ×22, 4×4 ×17, 2×2 ×12 (decorative dots/bullets)
+#
+# KEY FINDING — AC.pdf page 7 (and pages 4+, 28+):
+#   get_text("dict", flags=TEXT_PRESERVE_IMAGES) reveals inline icons as
+#   IMAGE blocks (type=1) perfectly interleaved between TEXT spans:
+#
+#     TEXT: "If the Alert State is "
+#     IMAGE: 22×14  bbox=(335.2, 166.7, 340.5, 170.0)   ← inline icon!
+#     TEXT: " , perform all "
+#     TEXT: "Detection Tests as if it were "
+#     IMAGE: 12×14  bbox=(348.3, 171.1, 351.1, 174.3)   ← inline icon!
+#     TEXT: " ."
+#     TEXT: "Once per turn, if "
+#     IMAGE: 12×14  bbox=(331.6, 175.6, 334.4, 178.8)   ← inline icon!
+#     TEXT: " , ignore 1 Detection Test..."
+#
+#   Restricted area section (page 28):
+#     TEXT: "In the Campaign Booklet, each square on a Map contain­"
+#     IMAGE: 33×33  bbox=(96.6, 565.1, 104.4, 572.9)    ← [!] icon
+#     TEXT: " is considered a Restricted Area..."
+#
+#   Icons are 6×6 to 38×43 px, embedded as jpeg/png XObjects.
+#   No PUA fonts — all icons are raster images, not font glyphs.
+#
+# ==========================================================================
+# OUTPUT: python diagnose_icons.py ../examples/log.pdf (supplementary)
+# ==========================================================================
+# Page  XObj Images  PUA Chars  Text Gaps
+#    1            3          0          0
+#    2           11          0          0
+#    3          342          0          0
+#    4           66          0          0
+#    5           66          0          0
+#
+# KEY FINDING — LOG page 4: six 16×16 skill icons interleaved with text:
+#
+#     TEXT: "corresponding "
+#     TEXT: "advanced skill dice"
+#     IMAGE: 16×16  bbox=(427.1, 508.5, 438.4, 519.3)   ← skill icon 1
+#     IMAGE: 16×16  bbox=(439.8, 508.5, 451.1, 519.3)   ← skill icon 2
+#     IMAGE: 16×16  bbox=(452.6, 508.5, 463.9, 519.3)   ← skill icon 3
+#     IMAGE: 16×16  bbox=(465.3, 508.5, 476.7, 519.3)   ← skill icon 4
+#     IMAGE: 16×16  bbox=(478.1, 508.5, 489.4, 519.3)   ← skill icon 5
+#     IMAGE: 16×16  bbox=(490.8, 508.5, 502.2, 519.3)   ← skill icon 6
+#     TEXT: ". Compared to "
+#
+# ==========================================================================
+# CONCLUSION
+# ==========================================================================
+# All three test PDFs embed inline icons as raster XObject images, NOT as
+# PUA font glyphs. PyMuPDF's get_text("dict", flags=TEXT_PRESERVE_IMAGES)
+# returns these as IMAGE blocks (type=1) perfectly interleaved with TEXT
+# blocks in reading order, with exact bboxes.
+#
+# This means we can:
+#   1. Detect icon positions structurally (no vision model needed)
+#   2. Crop each icon from the rendered page image using its bbox
+#   3. Cluster identical icons by MD5 digest (free deduplication)
+#   4. Name each cluster once (via legend page or Haiku), then reuse
+#   5. Inject [icon_name] at the correct text positions before/during
+#      classification, giving Claude exact icon context

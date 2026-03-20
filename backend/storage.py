@@ -1,12 +1,13 @@
 import chromadb
 import json
+import os
 from pathlib import Path
 from models import Element, BoundingBox, SearchResult, SourceType
 
-DATA_DIR = Path("./data")
+DATA_DIR = Path(os.environ.get("BGR_DATA_DIR", "./data"))
 RULEBOOKS_FILE = DATA_DIR / "rulebooks.json"
 
-client = chromadb.PersistentClient(path="./data/chroma")
+client = chromadb.PersistentClient(path=str(DATA_DIR / "chroma"))
 _collections: dict[str, chromadb.Collection] = {}
 
 

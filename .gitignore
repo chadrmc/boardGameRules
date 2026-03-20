@@ -4,6 +4,8 @@ backend/__pycache__/
 backend/*.pyc
 backend/data/
 tests/__pycache__/
+tests/data/
+tests/.env.test
 
 # Data / ChromaDB
 data/

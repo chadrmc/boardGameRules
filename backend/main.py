@@ -26,7 +26,7 @@ app = FastAPI(title="Board Game Rulebook Search")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origin_regex=r"http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -46,8 +46,6 @@ async def ingest_rulebook(
     is_html = filename_lower.endswith(".html") or filename_lower.endswith(".htm")
 
     if is_html:
-        storage.delete_rulebook_elements(rulebook_id, source_type)
-
         async def generate_html():
             nonlocal game_name
             html = raw_bytes.decode("utf-8", errors="replace")
@@ -61,6 +59,8 @@ async def ingest_rulebook(
                 rulebook_id=rulebook_id,
                 source_type=source_type,
             )
+            # Delete old elements only after new ones are ready
+            storage.delete_rulebook_elements(rulebook_id, source_type)
             storage.add_elements(elements)
             yield f"data: {json.dumps({'done': True, 'rulebook_id': rulebook_id, 'game_name': game_name, 'pages_processed': 1, 'elements_found': len(elements)})}\n\n"
 
@@ -74,8 +74,6 @@ async def ingest_rulebook(
     mat = fitz.Matrix(PDF_RENDER_SCALE, PDF_RENDER_SCALE)
     total_pages = doc.page_count
 
-    storage.delete_rulebook_elements(rulebook_id, source_type)
-
     async def generate():
         nonlocal game_name
         all_elements = []
@@ -85,9 +83,83 @@ async def ingest_rulebook(
 
         use_text_path = source_type in ("faq", "errata")
 
+        # --- Layout calibration + document profile ---
+        layout_stats: dict | None = None
+        document_profile: dict | None = None
+        cached_split_results: dict[int, tuple] = {}  # pdf_page_num → (split_x, boxes, img_bytes)
+        if not use_text_path and total_pages > 0:
+            # Check for a stored profile from a previous ingest of this rulebook
+            stored_profile = storage.get_document_profile(rulebook_id)
+
+            # Pick sample indices (1-based): page 1, n//3, 2n//3
+            if total_pages <= 3:
+                sample_page_nums = list(range(1, total_pages + 1))
+            else:
+                sample_page_nums = [1, total_pages // 3, 2 * total_pages // 3]
+
+            sampled_boxes: list[list[dict]] = []
+            sampled_widths: list[int] = []
+            sample_images_for_profile: list[bytes] = []  # page images for Haiku profiling
+
+            for spn in sample_page_nums:
+                page = doc[spn - 1]
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                img_bytes = pix.tobytes("png")
+
+                split_x, full_boxes = await asyncio.to_thread(
+                    ingest_module.detect_page_split, img_bytes,
+                )
+                cached_split_results[spn] = (split_x, full_boxes, img_bytes)
+                sample_images_for_profile.append(img_bytes)
+
+                if split_x is not None and full_boxes:
+                    # 2-up: use remapped half-boxes so width ratios match logical pages
+                    for half in ("left", "right"):
+                        half_boxes = ingest_module._remap_boxes_to_half(full_boxes, split_x, half)
+                        half_w = split_x if half == "left" else (
+                            int(pix.width) - split_x
+                        )
+                        sampled_boxes.append(half_boxes)
+                        sampled_widths.append(half_w)
+                elif full_boxes:
+                    sampled_boxes.append(full_boxes)
+                    sampled_widths.append(int(pix.width))
+
+            layout_stats = ingest_module._compute_layout_stats(sampled_boxes, sampled_widths)
+
+            # Phase B: Claude document profile (reuse stored if available)
+            if stored_profile:
+                document_profile = stored_profile
+            else:
+                # Render early pages (1–5) for icon legend extraction, reusing cached where available
+                early_page_nums = list(range(1, min(5, total_pages) + 1))
+                early_page_images: list[bytes] = []
+                for epn in early_page_nums:
+                    if epn in cached_split_results:
+                        _, _, ep_bytes = cached_split_results[epn]
+                        early_page_images.append(ep_bytes)
+                    else:
+                        ep_page = doc[epn - 1]
+                        ep_pix = ep_page.get_pixmap(matrix=mat, alpha=False)
+                        ep_bytes = ep_pix.tobytes("png")
+                        early_page_images.append(ep_bytes)
+
+                document_profile = await asyncio.to_thread(
+                    ingest_module._build_document_profile,
+                    sample_images_for_profile,
+                    layout_stats,
+                    early_page_images,
+                )
+                if document_profile:
+                    storage.save_document_profile(rulebook_id, document_profile)
+
         for pdf_page_num, page in enumerate(doc, start=1):
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            image_bytes = pix.tobytes("png")
+            # Reuse rendered image from calibration cache if available
+            if pdf_page_num in cached_split_results:
+                _, _, image_bytes = cached_split_results[pdf_page_num]
+            else:
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                image_bytes = pix.tobytes("png")
 
             if pdf_page_num == 1:
                 if game_name is None:
@@ -98,7 +170,7 @@ async def ingest_rulebook(
 
             if use_text_path:
                 logical_page += 1
-                filename = f"{rulebook_id}_page{logical_page}.png"
+                filename = f"{rulebook_id}_{source_type}_page{logical_page}.png"
                 (IMAGES_DIR / filename).write_bytes(image_bytes)
 
                 fitz_blocks = page.get_text("blocks")
@@ -117,20 +189,29 @@ async def ingest_rulebook(
                     image_path=f"/images/{filename}",
                     initial_section=last_section,
                 )
-                storage.add_elements(elements)
                 all_elements.extend(elements)
                 page_elements.extend(elements)
             else:
-                split_x = await asyncio.to_thread(ingest_module.detect_page_split, image_bytes)
+                # Reuse detect_page_split results from calibration cache if available
+                if pdf_page_num in cached_split_results:
+                    split_x, full_boxes, _ = cached_split_results[pdf_page_num]
+                else:
+                    split_x, full_boxes = await asyncio.to_thread(ingest_module.detect_page_split, image_bytes)
 
                 if split_x is not None:
                     halves = await asyncio.to_thread(ingest_module.split_image, image_bytes, split_x)
+                    # Remap full-image boxes to each half's coordinate system
+                    half_boxes = [
+                        ingest_module._remap_boxes_to_half(full_boxes, split_x, "left"),
+                        ingest_module._remap_boxes_to_half(full_boxes, split_x, "right"),
+                    ]
                 else:
                     halves = (image_bytes,)
+                    half_boxes = [full_boxes]  # reuse boxes from split detection if available
 
-                for half_bytes in halves:
+                for half_idx, half_bytes in enumerate(halves):
                     logical_page += 1
-                    filename = f"{rulebook_id}_page{logical_page}.png"
+                    filename = f"{rulebook_id}_{source_type}_page{logical_page}.png"
                     (IMAGES_DIR / filename).write_bytes(half_bytes)
 
                     elements, last_section, detected_source = await asyncio.to_thread(
@@ -142,14 +223,20 @@ async def ingest_rulebook(
                         image_path=f"/images/{filename}",
                         initial_section=last_section,
                         initial_source_type=last_detected_source,
+                        precomputed_boxes=half_boxes[half_idx],
+                        layout_stats=layout_stats,
+                        document_profile=document_profile,
                     )
                     if detected_source:
                         last_detected_source = detected_source
-                    storage.add_elements(elements)
                     all_elements.extend(elements)
                     page_elements.extend(elements)
 
             yield f"data: {json.dumps({'page': pdf_page_num, 'total': total_pages, 'elements': len(page_elements)})}\n\n"
+
+        # Delete old elements only after all pages processed successfully, then bulk add
+        storage.delete_rulebook_elements(rulebook_id, source_type)
+        storage.add_elements(all_elements)
 
         yield f"data: {json.dumps({'done': True, 'rulebook_id': rulebook_id, 'game_name': game_name, 'pages_processed': logical_page, 'elements_found': len(all_elements)})}\n\n"
 
@@ -251,6 +338,11 @@ async def ask_question(
 @app.get("/rulebooks")
 async def list_rulebooks():
     return {"rulebooks": storage.list_rulebooks()}  # [{id, name}, ...]
+
+
+@app.get("/rulebooks/{rulebook_id}/page_count")
+async def get_page_count(rulebook_id: str):
+    return {"page_count": storage.get_page_count(rulebook_id)}
 
 
 @app.get("/elements")

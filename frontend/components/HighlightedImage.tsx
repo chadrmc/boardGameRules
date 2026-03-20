@@ -16,6 +16,7 @@ interface Props {
   onHighlightClick?: (index: number) => void;
   onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   imgRef?: React.RefObject<HTMLImageElement>;
+  alt?: string;
 }
 
 export function HighlightedImage({
@@ -25,11 +26,12 @@ export function HighlightedImage({
   onHighlightClick,
   onLoad,
   imgRef,
+  alt,
 }: Props) {
   return (
     <div className="relative w-full">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img ref={imgRef} src={src} alt="Rulebook page" className="w-full h-auto block" onLoad={onLoad} />
+      <img ref={imgRef} src={src} alt={alt || "Rulebook page"} className="w-full h-auto block" onLoad={onLoad} />
       {highlights.map((h, i) => (
         <div
           key={i}

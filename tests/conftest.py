@@ -69,6 +69,31 @@ def ingested_rulebook(backend, project_root):
     return TEST_RULEBOOK_ID, done_event
 
 
+def parse_ask_sse(resp):
+    """
+    Parse an SSE response from GET /ask.
+    Returns (results, answer_text) where:
+      - results: list from the first 'results' event
+      - answer_text: concatenated token strings
+    """
+    results = None
+    tokens = []
+    for raw_line in resp.iter_lines():
+        if not raw_line:
+            continue
+        line = raw_line.decode() if isinstance(raw_line, bytes) else raw_line
+        if not line.startswith("data:"):
+            continue
+        payload = json.loads(line[len("data:"):].strip())
+        if payload.get("type") == "results":
+            results = payload.get("results", [])
+        elif payload.get("type") == "token":
+            tokens.append(payload.get("text", ""))
+        elif payload.get("type") == "done":
+            break
+    return results, "".join(tokens)
+
+
 @pytest.fixture(scope="session")
 def project_root():
     from pathlib import Path

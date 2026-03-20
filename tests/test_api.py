@@ -1,9 +1,11 @@
 """
 Structural API tests — verify endpoint contracts without touching ingested data.
-All tests require the backend to be running (marked live via the `backend` fixture).
+All tests require the backend to be running.
 """
 import pytest
 import requests
+
+pytestmark = pytest.mark.live
 
 
 def test_list_rulebooks_shape(backend):
@@ -17,39 +19,44 @@ def test_list_rulebooks_shape(backend):
         assert "name" in rb
 
 
-def test_search_missing_rulebook_id_returns_422(backend):
-    resp = requests.get(f"{backend}/search", params={"q": "test"}, timeout=5)
+def test_ask_missing_rulebook_id_returns_422(backend):
+    resp = requests.get(f"{backend}/ask", params={"q": "test"}, timeout=5)
     assert resp.status_code == 422
 
 
-def test_search_missing_query_returns_422(backend):
-    resp = requests.get(f"{backend}/search", params={"rulebook_id": "anything"}, timeout=5)
+def test_ask_missing_query_returns_422(backend):
+    resp = requests.get(f"{backend}/ask", params={"rulebook_id": "anything"}, timeout=5)
     assert resp.status_code == 422
 
 
-def test_search_unknown_rulebook_returns_empty(backend):
-    """Unknown rulebook ID should return 200 with empty results (not a 500)."""
+def test_ask_unknown_rulebook_returns_empty_results(backend):
+    """Unknown rulebook ID should return 200 SSE stream with empty results event (not a 500)."""
+    from conftest import parse_ask_sse
     resp = requests.get(
-        f"{backend}/search",
+        f"{backend}/ask",
         params={"q": "anything", "rulebook_id": "does-not-exist-xyz"},
-        timeout=5,
+        stream=True,
+        timeout=30,
     )
     assert resp.status_code == 200
-    body = resp.json()
-    assert "results" in body
-    assert body["results"] == []
+    results, _ = parse_ask_sse(resp)
+    assert results is not None, "No results event in SSE stream"
+    assert results == [], f"Expected empty results for unknown rulebook, got {results}"
 
 
-def test_search_n_param_respected(backend, ingested_rulebook):
+def test_ask_n_param_respected(backend, ingested_rulebook):
+    from conftest import parse_ask_sse
     rulebook_id, _ = ingested_rulebook
     for n in (1, 2, 3):
         resp = requests.get(
-            f"{backend}/search",
+            f"{backend}/ask",
             params={"q": "rule", "rulebook_id": rulebook_id, "n": n},
-            timeout=10,
+            stream=True,
+            timeout=30,
         )
         assert resp.status_code == 200
-        results = resp.json()["results"]
+        results, _ = parse_ask_sse(resp)
+        assert results is not None
         assert len(results) <= n, f"Expected ≤{n} results, got {len(results)}"
 
 

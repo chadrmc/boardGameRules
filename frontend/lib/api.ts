@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "./constants";
 
 export interface BBox {
   x: number;
@@ -44,6 +44,13 @@ export async function getPageElements(rulebookId: string, pageNumber: number): P
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.elements;
+}
+
+export async function getPageCount(rulebookId: string): Promise<number> {
+  const res = await fetch(`${API_BASE}/rulebooks/${rulebookId}/page_count`);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.page_count;
 }
 
 export async function listRulebooks(): Promise<Rulebook[]> {

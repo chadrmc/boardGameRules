@@ -12,7 +12,7 @@ import requests
 import numpy as np
 from PIL import Image
 
-FROMAGE_ID = "fr"
+FROMAGE_ID = "f"
 CONTENTS_PAGE = 16
 EXPECTED_MIN_ITEMS = 10  # loose lower bound; real count is 14
 

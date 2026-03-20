@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { SearchBar } from "@/components/SearchBar";
+import { useState, useEffect, useRef } from "react";
+import { SearchBar, SearchBarHandle } from "@/components/SearchBar";
 import { ResultCard } from "@/components/ResultCard";
 import { PageModal } from "@/components/PageModal";
 import { UploadPanel } from "@/components/UploadPanel";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { PageBrowser } from "@/components/PageBrowser";
 import { ask, listRulebooks, Element, SearchResult, Rulebook } from "@/lib/api";
 
 // Cluster results on the same page whose bboxes are within GAP_THRESHOLD vertically.
@@ -57,6 +59,8 @@ export default function Home() {
   const [rulebooks, setRulebooks] = useState<Rulebook[]>([]);
   const [selectedRulebook, setSelectedRulebook] = useState<string>("");
   const [modalState, setModalState] = useState<{ primary: SearchResult; group: SearchResult[] } | null>(null);
+  const [browsing, setBrowsing] = useState(false);
+  const searchBarRef = useRef<SearchBarHandle>(null);
 
   useEffect(() => {
     listRulebooks()
@@ -94,9 +98,12 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Board Game Rulebook Search
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Board Game Rulebook Search
+          </h1>
+          <ConnectionStatus />
+        </div>
         <p className="text-sm text-gray-500 mt-0.5">
           Answers sourced directly from the rulebook — no assumptions
         </p>
@@ -110,13 +117,17 @@ export default function Home() {
           {rulebooks.length === 0 ? (
             <p className="text-sm text-gray-400">No rulebooks yet — upload one above to get started.</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {rulebooks.map((book) => {
                 const active = selectedRulebook === book.id;
                 return (
                   <button
                     key={book.id}
-                    onClick={() => setSelectedRulebook(book.id)}
+                    onClick={() => {
+                      setSelectedRulebook(book.id);
+                      setBrowsing(false);
+                      setTimeout(() => searchBarRef.current?.focus(), 0);
+                    }}
                     className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-colors ${
                       active
                         ? "bg-blue-600 border-blue-600 text-white shadow-sm"
@@ -127,15 +138,37 @@ export default function Home() {
                   </button>
                 );
               })}
+              {selectedRulebook && (
+                <button
+                  onClick={() => setBrowsing((v) => !v)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-mono transition-colors ${
+                    browsing
+                      ? "bg-amber-100 border-amber-400 text-amber-800"
+                      : "bg-gray-100 border-gray-300 text-gray-500 hover:border-amber-400 hover:text-amber-700"
+                  }`}
+                >
+                  {browsing ? "Close browser" : "Browse pages"}
+                </button>
+              )}
             </div>
           )}
         </div>
 
+        {/* Page browser — dev tool for auditing ingestion */}
+        {browsing && selectedRulebook && (
+          <PageBrowser rulebookId={selectedRulebook} onClose={() => setBrowsing(false)} />
+        )}
+
         {/* Step 2: search — only active once a game is selected */}
-        <div className={!selectedRulebook ? "opacity-40 pointer-events-none select-none" : ""}>
-          <SearchBar onSearch={handleSearch} loading={loading} disabled={!selectedRulebook} />
+        <div>
+          <SearchBar ref={searchBarRef} onSearch={handleSearch} loading={loading} disabled={!selectedRulebook} />
           {!selectedRulebook && (
-            <p className="text-xs text-gray-400 mt-1.5">Select a game above to search</p>
+            <p id="search-disabled-hint" className="text-xs text-gray-400 mt-1.5">Select a game above to search</p>
+          )}
+          {selectedRulebook && !searched && (
+            <p className="text-xs text-gray-400 mt-1.5">
+              Try searching for setup, scoring, movement, or any specific rule
+            </p>
           )}
         </div>
 

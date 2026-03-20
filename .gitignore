@@ -20,6 +20,10 @@ examples/
 # Node
 frontend/node_modules/
 frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Claude Code local config
+.claude/
 
 # OS
 .DS_Store

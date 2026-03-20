@@ -19,21 +19,47 @@ def _get_collection(rulebook_id: str) -> chromadb.Collection:
     return _collections[rulebook_id]
 
 
-def _load_rulebooks() -> dict[str, str]:
+def _load_rulebooks() -> dict:
     if RULEBOOKS_FILE.exists():
         return json.loads(RULEBOOKS_FILE.read_text())
     return {}
 
 
-def _save_rulebooks(data: dict[str, str]) -> None:
+def _save_rulebooks(data: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     RULEBOOKS_FILE.write_text(json.dumps(data, indent=2))
 
 
+def _get_entry(data: dict, rulebook_id: str) -> dict:
+    """Get a rulebook entry, handling legacy format (plain string → dict)."""
+    val = data.get(rulebook_id)
+    if isinstance(val, str):
+        return {"name": val}
+    return val or {}
+
+
 def register_rulebook(rulebook_id: str, game_name: str) -> None:
     data = _load_rulebooks()
-    data[rulebook_id] = game_name
+    entry = _get_entry(data, rulebook_id)
+    entry["name"] = game_name
+    data[rulebook_id] = entry
     _save_rulebooks(data)
+
+
+def save_document_profile(rulebook_id: str, profile: dict) -> None:
+    """Store a document profile alongside the rulebook entry."""
+    data = _load_rulebooks()
+    entry = _get_entry(data, rulebook_id)
+    entry["profile"] = profile
+    data[rulebook_id] = entry
+    _save_rulebooks(data)
+
+
+def get_document_profile(rulebook_id: str) -> dict | None:
+    """Retrieve a stored document profile, or None if not set."""
+    data = _load_rulebooks()
+    entry = _get_entry(data, rulebook_id)
+    return entry.get("profile")
 
 
 def delete_rulebook_elements(rulebook_id: str, source_type: str | None = None) -> None:
@@ -97,9 +123,21 @@ def get_page_elements(rulebook_id: str, page_number: int) -> list[Element]:
     return elements
 
 
+def get_page_count(rulebook_id: str) -> int:
+    coll = _get_collection(rulebook_id)
+    if coll.count() == 0:
+        return 0
+    results = coll.get(include=["metadatas"])
+    return max((m["page_number"] for m in results["metadatas"]), default=0)
+
+
 def list_rulebooks() -> list[dict]:
     data = _load_rulebooks()
-    return [{"id": k, "name": v} for k, v in sorted(data.items())]
+    result = []
+    for k, v in sorted(data.items()):
+        name = v if isinstance(v, str) else v.get("name", k)
+        result.append({"id": k, "name": name})
+    return result
 
 
 def _parse_results(results: dict, n_results: int) -> list[SearchResult]:

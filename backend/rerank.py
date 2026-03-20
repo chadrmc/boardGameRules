@@ -1,6 +1,9 @@
 import anthropic
 import json
+import logging
 from models import SearchResult
+
+logger = logging.getLogger(__name__)
 
 client = anthropic.Anthropic()
 
@@ -51,8 +54,12 @@ def rerank(query: str, results: list[SearchResult]) -> list[SearchResult]:
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 
-    data = json.loads(raw)
-    ranked_indices = data["ranked_indices"]
+    try:
+        data = json.loads(raw)
+        ranked_indices = data["ranked_indices"]
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning("Reranker failed to parse response, returning original order: %s", e)
+        return results
 
     # Return results in re-ranked order, ignoring any out-of-range indices
     seen = set()

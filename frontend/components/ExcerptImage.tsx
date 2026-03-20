@@ -11,6 +11,10 @@ interface Highlight {
 interface Props {
   src: string;
   highlights: Highlight[];
+  /** CSS max-height for the container (e.g. "144px"). Adds a bottom fade when content overflows. */
+  maxHeight?: string;
+  /** Descriptive alt text for the excerpt image. */
+  alt?: string;
 }
 
 // Padding added around the crop window so single-line excerpts show enough context.
@@ -19,7 +23,7 @@ const PAD_Y = 0.03;
 // Minimum crop height (as fraction of page height) so tiny results are still readable.
 const MIN_CROP_H = 0.12;
 
-export function ExcerptImage({ src, highlights }: Props) {
+export function ExcerptImage({ src, highlights, maxHeight, alt }: Props) {
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
 
   // Union bbox of all highlights defines the crop window.
@@ -57,10 +61,14 @@ export function ExcerptImage({ src, highlights }: Props) {
     ? -(display.y * naturalSize.h / naturalSize.w) * 100
     : 0;
 
+  const containerStyle: React.CSSProperties = aspectRatio
+    ? { aspectRatio: String(aspectRatio), ...(maxHeight ? { maxHeight } : {}) }
+    : { paddingTop: "30%" };
+
   return (
     <div
       className="relative overflow-hidden bg-gray-100"
-      style={aspectRatio ? { aspectRatio: String(aspectRatio) } : { paddingTop: "30%" }}
+      style={containerStyle}
     >
       {/* Inner div handles horizontal placement; image margin-top handles vertical */}
       <div
@@ -73,7 +81,7 @@ export function ExcerptImage({ src, highlights }: Props) {
       >
         <img
           src={src}
-          alt="Excerpt"
+          alt={alt || "Rulebook excerpt"}
           style={{
             display: "block",
             width: "100%",
@@ -99,6 +107,10 @@ export function ExcerptImage({ src, highlights }: Props) {
             <div key={i} className="absolute border-2 pointer-events-none" style={style} />
           );
         })}
+      {/* Bottom fade gradient when content is height-capped */}
+      {maxHeight && (
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-100 to-transparent pointer-events-none" />
+      )}
     </div>
   );
 }

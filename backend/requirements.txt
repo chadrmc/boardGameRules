@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+anthropic
+chromadb
+pillow
+pymupdf
+python-multipart
+pydantic
+numpy
+paddlepaddle
+paddleocr

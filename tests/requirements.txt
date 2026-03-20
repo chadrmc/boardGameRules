@@ -1,0 +1,5 @@
+pytest
+requests
+urllib3>=1.26,<2
+Pillow
+numpy

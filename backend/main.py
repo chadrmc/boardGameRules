@@ -294,8 +294,9 @@ async def ask_question(
         "Answer the player's question using ONLY the rulebook excerpts provided. "
         "Do not use any prior knowledge about this game. "
         "If the answer isn't clearly supported by the excerpts, say so briefly. "
-        "Be concise and direct. Cite sources using bracket notation like [1], [2] etc. "
-        "matching the excerpt numbers provided."
+        "Be concise and direct. Each excerpt is labeled with its type (rule, example, note, etc.) — "
+        "treat examples as illustrations, not as rules. "
+        "Cite sources using bracket notation like [1], [2] etc. matching the excerpt numbers provided."
     )
     user_msg = f"Rulebook excerpts:\n{context}\n\nQuestion: {q}"
 

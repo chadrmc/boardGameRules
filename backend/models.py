@@ -60,7 +60,7 @@ class ResultSet:
     def context(self) -> str:
         parts = []
         for i, r in enumerate(self.results, 1):
-            part = f"[{i}] {r.element.label} (page {r.element.page_number})\n{r.element.description}"
+            part = f"[{i}] {r.element.label} ({r.element.type}, page {r.element.page_number})\n{r.element.description}"
             for e in r.errata:
                 part += f"\n\n  [Errata] {e.label}\n  {e.description}"
             for e in r.faq:
